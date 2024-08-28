@@ -1,6 +1,7 @@
 const express = require('express')
 const axios = require('axios')
 const fs = require('fs')
+const util = require('util')
 const path = require('path')
 
 const dotenv = require('dotenv');
@@ -14,6 +15,9 @@ const PORT = 3000;
  * @param {string} bitmapPath - The path to the bitmap file.
  * @param {function} callback - Callback function that will receive the array of base64 strings.
  */
+
+// Promisify fs.readFile
+const readFileAsync = util.promisify(fs.readFile);
 
 // Private Functions TODO: asd
 function videoToBitmap(videoPath, outputDir, width, height, callback) {
@@ -37,23 +41,25 @@ function videoToBitmap(videoPath, outputDir, width, height, callback) {
         .run();
 }
 
-function bitmapToStringArray(bitmapPath, callback) {
-    fs.readFile(bitmapPath, (err, data) => {
-        if (err) {
-            console.error('Error reading bitmap file:', err);
-            callback(err, null);
-            return;
-        }
+async function bitmapToStringArray(bitmapPath, callback) {
+    try {
+        // Await the result of readFileAsync
+        const data = await readFileAsync(bitmapPath);
         
         // Convert binary data to base64 string
         const base64String = data.toString('base64');
-
+        
         // Store the base64 string in an array
         const resultArray = [base64String];
-
+        
         // Call the callback with the result array
         callback(null, resultArray);
-    });
+    } catch (err) {
+        console.error('Error reading bitmap file:', err);
+        
+        // Call the callback with the error
+        callback(err, null);
+    }
 }
 
 
@@ -107,7 +113,7 @@ app.get("/requestBitmap", async (req, res) => {
     const startPoint = parseInt(req.query.startPoint, 10) || 1920; // Default width if not provided
     const range = parseInt(req.query.range, 10) || 1080; // Default height if not provided
 
-    const movieFilePath = `MovieFiles/${movieName}.mp4`;
+    const movieFilePath = `Bitmaps/${movieName}`;
 
     if (!fs.existsSync(movieFilePath)) {
         return res.status(404).json({
@@ -116,16 +122,26 @@ app.get("/requestBitmap", async (req, res) => {
         });
     }
 
-    const bitmapFilePath = `Bitmaps/${movieName}/frame-002.bmp`;
-    const stringBitmap = bitmapToStringArray(bitmapFilePath, (err, resultArray) => {
-        if (err) {
-            console.error('Failed to convert bitmap to string array:', err);
-        } else {
-            console.log('Bitmap converted to string array:', resultArray);
-        }
-    });
+    try {
+        const bitmapFilePath = `Bitmaps/${movieName}/frame-002.bmp`
+        bitmapToStringArray(bitmapFilePath, (err, resultArray) => {
+            if (err) {
+                console.error('Failed to convert bitmap to string array:', err);
+            } else {
+                // console.log(resultArray)
 
-    console.log(stringBitmap)
+                return res.status(200).json({
+                    result: true,
+                    data: resultArray,
+                })
+            }
+        }); 
+    } catch (err) {
+        return res.status(500).json({
+            result: false,
+            message: 'Failed to convert bitmap to string',
+        });
+    }
 })
 
 app.listen(PORT, () => console.log(`Server running at http://localhost:${PORT}`))
