@@ -16,8 +16,6 @@ const PORT = 3000;
  * @param {function} callback - Callback function that will receive the array of base64 strings.
  */
 
-// Promisify fs.readFile
-const readFileAsync = util.promisify(fs.readFile);
 
 // Private Functions TODO: asd
 function videoToBitmap(videoPath, outputDir, width, height, callback) {
@@ -25,9 +23,9 @@ function videoToBitmap(videoPath, outputDir, width, height, callback) {
     const scaleFilter = `scale=${width}:${height}`;
 
     ffmpeg(videoPath)
-        .output(path.join(outputDir, 'frame-%03d.bmp'))
+        .output(path.join(outputDir, 'frame-%d.bmp'))
         .outputOptions([
-            '-vf', `fps=1,${scaleFilter}`, // Extract frames and apply scaling filter
+            '-vf', `fps=30,${scaleFilter}`, // Extract frames and apply scaling filter
             '-q:v', 2 // Set quality of the output images (lower value means higher quality)
         ])
         .on('end', () => {
@@ -41,27 +39,30 @@ function videoToBitmap(videoPath, outputDir, width, height, callback) {
         .run();
 }
 
-async function bitmapToStringArray(bitmapPath, callback) {
-    try {
-        // Await the result of readFileAsync
-        const data = await readFileAsync(bitmapPath);
-        
-        // Convert binary data to base64 string
-        const base64String = data.toString('base64');
-        
-        // Store the base64 string in an array
-        const resultArray = [base64String];
-        
-        // Call the callback with the result array
-        callback(null, resultArray);
-    } catch (err) {
-        console.error('Error reading bitmap file:', err);
-        
-        // Call the callback with the error
-        callback(err, null);
-    }
-}
+function bitmapToRGBString(filePath) {
+    const bitmap = fs.readFileSync(filePath);
 
+    // BMP files have a header of 54 bytes
+    const headerSize = 54;
+    const width = bitmap.readUInt32LE(18);
+    const height = bitmap.readUInt32LE(22);
+    const start = bitmap.readUInt32LE(10);
+
+    let rgbString = '';
+
+    // Loop through each pixel (starting from the end due to BMP's storage order)
+    for (let y = height - 1; y >= 0; y--) {
+        for (let x = 0; x < width; x++) {
+            const idx = start + (x + y * width) * 3;
+            const b = bitmap[idx];
+            const g = bitmap[idx + 1];
+            const r = bitmap[idx + 2];
+            rgbString += `${r},${g},${b};`;
+        }
+    }
+
+    return rgbString.slice(0, -1); // Remove the last semicolon
+}
 
 // API
 app.use(express.json())
@@ -121,26 +122,27 @@ app.get("/requestBitmap", async (req, res) => {
             message: "Couldn't find a movie with that file path",
         });
     }
-
+        
     try {
-        const bitmapFilePath = `Bitmaps/${movieName}/frame-002.bmp`
-        bitmapToStringArray(bitmapFilePath, (err, resultArray) => {
-            if (err) {
-                console.error('Failed to convert bitmap to string array:', err);
-            } else {
-                // console.log(resultArray)
+        let decodedStrings = []
+        for (let i = startPoint; i < startPoint + range; i++) {
+            const bitmapFilePath = `Bitmaps/${movieName}/frame-${i}.bmp`
+            if (!fs.existsSync(bitmapFilePath)) continue
 
-                return res.status(200).json({
-                    result: true,
-                    data: resultArray,
-                })
-            }
-        }); 
-    } catch (err) {
-        return res.status(500).json({
+            const rgbString = bitmapToRGBString(bitmapFilePath);
+
+            decodedStrings.push(rgbString)
+        }
+
+        return res.status(200).json({
+            result: true,
+            response: decodedStrings,
+        })
+    } catch {
+        return res.status(404).json({
             result: false,
-            message: 'Failed to convert bitmap to string',
-        });
+            message: "Couldn't convert bitmap to RGB"
+        })
     }
 })
 
