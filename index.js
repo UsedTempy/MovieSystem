@@ -25,7 +25,7 @@ function videoToBitmap(videoPath, outputDir, width, height, callback) {
     ffmpeg(videoPath)
         .output(path.join(outputDir, 'frame-%d.bmp'))
         .outputOptions([
-            '-vf', `fps=30,${scaleFilter}`, // Extract frames and apply scaling filter
+            '-vf', `fps=60,${scaleFilter}`, // Extract frames and apply scaling filter
             '-q:v', 2 // Set quality of the output images (lower value means higher quality)
         ])
         .on('end', () => {
@@ -43,7 +43,6 @@ function bitmapToRGBString(filePath) {
     const bitmap = fs.readFileSync(filePath);
 
     // BMP files have a header of 54 bytes
-    const headerSize = 54;
     const width = bitmap.readUInt32LE(18);
     const height = bitmap.readUInt32LE(22);
     const start = bitmap.readUInt32LE(10);
@@ -111,10 +110,11 @@ app.get("/createBitmap", async (req, res) => {
 
 app.get("/requestBitmap", async (req, res) => {
     const movieName = req.query.movieName;
-    const startPoint = parseInt(req.query.startPoint, 10) || 1920; // Default width if not provided
-    const range = parseInt(req.query.range, 10) || 1080; // Default height if not provided
+    const startPoint = parseInt(req.query.startPoint) // || 1920; // Default width if not provided
+    const range = parseInt(req.query.range) // || 1080; // Default height if not provided
 
     const movieFilePath = `Bitmaps/${movieName}`;
+    console.log(movieName, startPoint, range)
 
     if (!fs.existsSync(movieFilePath)) {
         return res.status(404).json({
@@ -130,7 +130,6 @@ app.get("/requestBitmap", async (req, res) => {
             if (!fs.existsSync(bitmapFilePath)) continue
 
             const rgbString = bitmapToRGBString(bitmapFilePath);
-
             decodedStrings.push(rgbString)
         }
 
